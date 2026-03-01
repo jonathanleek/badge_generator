@@ -1,45 +1,112 @@
-Overview
-========
+# Badge Generator
 
-Welcome to Astronomer! This project was generated after you ran 'astro dev init' using the Astronomer CLI. This readme describes the contents of the project, as well as how to run Apache Airflow on your local machine.
+An Apache Airflow project that automates the creation of laser-cuttable event badges (DXF format) from attendee data in Google Sheets. Built on the Astronomer platform.
 
-Project Contents
-================
+## How It Works
 
-Your Astro project contains the following files and folders:
+1. **Generate Badges** (`generate_badges` DAG) — Reads new attendees from a Google Sheet, generates individual DXF badge files, uploads them to GCS, and marks the rows as processed.
+2. **Arrange Badges** (`arrange_badges` DAG) — Packs individual badge files onto material sheets optimized for laser cutting, uploads the arranged sheets to GCS, and archives the originals.
 
-- dags: This folder contains the Python files for your Airflow DAGs. By default, this directory includes one example DAG:
-    - `example_astronauts`: This DAG shows a simple ETL pipeline example that queries the list of astronauts currently in space from the Open Notify API and prints a statement for each astronaut. The DAG uses the TaskFlow API to define tasks in Python, and dynamic task mapping to dynamically print a statement for each astronaut. For more on how this DAG works, see our [Getting started tutorial](https://www.astronomer.io/docs/learn/get-started-with-airflow).
-- Dockerfile: This file contains a versioned Astro Runtime Docker image that provides a differentiated Airflow experience. If you want to execute other commands or overrides at runtime, specify them here.
-- include: This folder contains any additional files that you want to include as part of your project. It is empty by default.
-- packages.txt: Install OS-level packages needed for your project by adding them to this file. It is empty by default.
-- requirements.txt: Install Python packages needed for your project by adding them to this file. It is empty by default.
-- plugins: Add custom or community plugins for your project to this file. It is empty by default.
-- airflow_settings.yaml: Use this local-only file to specify Airflow Connections, Variables, and Pools instead of entering them in the Airflow UI as you develop DAGs in this project.
+### Badge Features
 
-Deploy Your Project Locally
-===========================
+- 50mm x 75mm badges with rounded corners
+- Auto-scaled name text and pronouns
+- Custom logo support (SVG or DXF)
+- Optional lanyard holes
+- Two-layer output: CUT (red) and ETCH (blue) for laser cutting
 
-Start Airflow on your local machine by running 'astro dev start'.
+## Prerequisites
 
-This command will spin up five Docker containers on your machine, each for a different Airflow component:
+- [Astro CLI](https://www.astronomer.io/docs/astro/cli/install-cli/)
+- Docker
+- A Google Cloud service account with access to the Sheets API and Cloud Storage
 
-- Postgres: Airflow's Metadata Database
-- Scheduler: The Airflow component responsible for monitoring and triggering tasks
-- DAG Processor: The Airflow component responsible for parsing DAGs
-- API Server: The Airflow component responsible for serving the Airflow UI and API
-- Triggerer: The Airflow component responsible for triggering deferred tasks
+## Setup
 
-When all five containers are ready the command will open the browser to the Airflow UI at http://localhost:8080/. You should also be able to access your Postgres Database at 'localhost:5432/postgres' with username 'postgres' and password 'postgres'.
+1. Configure a `google_cloud_default` Airflow connection with your service account credentials.
 
-Note: If you already have either of the above ports allocated, you can either [stop your existing Docker containers or change the port](https://www.astronomer.io/docs/astro/cli/troubleshoot-locally#ports-are-not-available-for-my-local-airflow-webserver).
+2. Prepare a Google Sheet with these columns:
 
-Deploy Your Project to Astronomer
-=================================
+   | Column | Header | Notes |
+   |--------|--------|-------|
+   | A | name | Attendee name |
+   | B | pronouns | e.g. "he/him" |
+   | C | lanyard_hole | TRUE / FALSE |
+   | D | badge_creation_date | Left blank — filled by the DAG |
 
-If you have an Astronomer account, pushing code to a Deployment on Astronomer is simple. For deploying instructions, refer to Astronomer documentation: https://www.astronomer.io/docs/astro/deploy-code/
+3. Update `include/inputs/badge_config.json` with your event URL and logo path:
 
-Contact
-=======
+   ```json
+   {
+     "url": "https://your-event.com",
+     "logo_uri": "include/inputs/logo_outline.svg"
+   }
+   ```
 
-The Astronomer CLI is maintained with love by the Astronomer team. To report a bug or suggest a change, reach out to our support.
+4. Start the local environment:
+
+   ```bash
+   astro dev start
+   ```
+
+   This spins up five containers (Postgres, Scheduler, DAG Processor, API Server, Triggerer). The Airflow UI will be available at http://localhost:8080/.
+
+## DAG Parameters
+
+### `generate_badges`
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `spreadsheet_id` | Google Sheet ID | *(required)* |
+| `sheet_range` | Sheet tab/range | `Sheet1` |
+| `gcs_bucket` | GCS bucket name | *(required)* |
+
+### `arrange_badges`
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `gcs_bucket` | GCS bucket name | *(required)* |
+| `material_w_in` | Material width (inches) | `24.0` |
+| `material_h_in` | Material height (inches) | `12.0` |
+
+## GCS Bucket Layout
+
+| Directory | Contents |
+|-----------|----------|
+| `prepared_badges/` | Individual badges awaiting layout |
+| `prepared_sheets/` | Laser-ready arranged sheets |
+| `completed_badges/` | Badges already placed on sheets |
+
+## Project Structure
+
+```
+badge_generator/
+├── dags/
+│   ├── generate_badges.py     # Badge generation DAG
+│   └── arrange_badges.py      # Sheet arrangement DAG
+├── include/
+│   ├── dxf_badges.py          # Core badge generation logic
+│   └── inputs/
+│       ├── badge_config.json  # Badge template config
+│       └── logo_outline.svg   # Logo file
+├── tests/
+│   └── dags/
+│       └── test_dag_example.py
+├── Dockerfile
+├── requirements.txt
+└── airflow_settings.yaml
+```
+
+## Running Tests
+
+```bash
+astro dev pytest
+```
+
+## Deploying to Astronomer
+
+```bash
+astro deploy
+```
+
+See the [Astronomer docs](https://www.astronomer.io/docs/astro/deploy-code/) for details.
